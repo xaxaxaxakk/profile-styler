@@ -11,7 +11,7 @@ const defaultSettings = Object.freeze({
     themes: {},
 });
 
-const DEFAULT_VALUES = Object.freeze({ zoom: 1, x: 50, y: 50, rot: 0, gray: 0, bright: 100, contrast: 100, sat: 100 });
+const DEFAULT_VALUES = Object.freeze({ zoom: 1, x: 50, y: 50, rot: 0, flip: false, gray: 0, bright: 100, contrast: 100, sat: 100 });
 
 const ctx = () => SillyTavern.getContext();
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
@@ -112,7 +112,7 @@ function naturalAspect(key, img) {
     return img?.naturalWidth ? img.naturalWidth / img.naturalHeight : null;
 }
 
-const needsCanvas = (p) => !!p.rot || p.bright !== 100 || p.contrast !== 100 || p.sat !== 100;
+const needsCanvas = (p) => !!p.rot || !!p.flip || p.bright !== 100 || p.contrast !== 100 || p.sat !== 100;
 
 function outputAspect(ar, rot) {
     const rad = rot * Math.PI / 180;
@@ -196,7 +196,7 @@ function drawProcessed(img, p, fill) {
     }
     c.translate(canvas.width / 2, canvas.height / 2);
     c.rotate(rad);
-    c.scale(scale * k, scale * k);
+    c.scale(scale * k * (p.flip ? -1 : 1), scale * k);
     c.drawImage(img, -w / 2, -h / 2);
     if (!nativeCanvasFilter) {
         c.setTransform(1, 0, 0, 1, 0, 0);
@@ -210,7 +210,7 @@ function drawProcessed(img, p, fill) {
     ));
 }
 
-const signature = (p) => [p.rot || 0, p.bright, p.contrast, p.sat, p.gray, settings().fillCorners ? 1 : 0].join('|');
+const signature = (p) => [p.rot || 0, p.flip ? 1 : 0, p.bright, p.contrast, p.sat, p.gray, settings().fillCorners ? 1 : 0].join('|');
 
 function requestProcessed(key, p) {
     let entry = processed.get(key);
@@ -267,6 +267,7 @@ function setProfile(key, p) {
         x: +clamp(p.x, 0, 100).toFixed(2),
         y: +clamp(p.y, 0, 100).toFixed(2),
         rot: Math.round(clamp(p.rot || 0, -180, 180)),
+        flip: !!p.flip,
         gray: +clamp(p.gray, 0, 100).toFixed(1),
         bright: Math.round(clamp(p.bright ?? 100, 0, 200)),
         contrast: Math.round(clamp(p.contrast ?? 100, 0, 200)),
@@ -358,6 +359,7 @@ function render() {
         rules.push(`#chat .mes .avatar:has(> ${imgSelector(editor.key).replace('#chat .mes .avatar ', '')}) {
     outline: 2px dashed var(--SmartThemeQuoteColor, #e18a24) !important;
     outline-offset: 2px;
+    border-radius: 0 !important;
 }`);
     }
     const css = rules.join('\n');
@@ -442,6 +444,14 @@ function buildEditor() {
                 <input type="range" data-field="${f.id}" min="${f.min}" max="${f.max}" step="${f.step}">
                 <input type="number" class="text_pole" data-field="${f.id}" min="${f.min}" max="${f.max}" step="${f.step}">
             </div>`).join('')}
+            ${t.id === 'pos' ? `
+            <label class="ps-toggle-row">
+                <span>좌우 반전</span>
+                <span class="ps-switch">
+                    <input type="checkbox" data-toggle="flip">
+                    <span class="ps-switch-track"></span>
+                </span>
+            </label>` : ''}
         </div>`).join('');
 
     const el = document.createElement('div');
@@ -487,6 +497,14 @@ function buildEditor() {
             commit(editor.key, { ...currentValues(editor.key), [input.dataset.field]: value });
             syncEditor(input);
         });
+    });
+
+    el.querySelector('input[data-toggle="flip"]').addEventListener('change', (e) => {
+        if (!editor.key) return;
+        const cur = currentValues(editor.key);
+        if (cur.flip === e.target.checked) return;
+        commit(editor.key, { ...cur, flip: e.target.checked, x: 100 - cur.x, rot: cur.rot ? -cur.rot : 0 });
+        syncEditor(false);
     });
 
     makeDraggable(el, el.querySelector('.ps-head'));
@@ -582,6 +600,9 @@ function syncEditor(skip = null) {
         input.disabled = !values;
         if (input !== skip && values) input.value = String(values[input.dataset.field]);
     });
+    const flip = editor.el.querySelector('input[data-toggle="flip"]');
+    flip.disabled = !values;
+    flip.checked = !!values?.flip;
 }
 
 function visibleAvatar(key) {

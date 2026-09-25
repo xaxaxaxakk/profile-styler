@@ -134,6 +134,68 @@ body.ps-dragging * {
     text-align: right;
 }
 
+#ps_editor .ps-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 2px 0 0;
+    cursor: pointer;
+    user-select: none;
+}
+
+#ps_editor .ps-switch {
+    position: relative;
+    display: inline-block;
+    width: 38px;
+    height: 22px;
+    flex: none;
+}
+
+#ps_editor .ps-switch input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+    z-index: 1;
+}
+
+#ps_editor .ps-switch-track {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: var(--SmartThemeBorderColor);
+    transition: background-color 0.15s ease;
+}
+
+#ps_editor .ps-switch-track::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--SmartThemeBlurTintColor, #fff);
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+    transition: transform 0.15s ease;
+}
+
+#ps_editor .ps-switch input:checked + .ps-switch-track {
+    background: var(--SmartThemeQuoteColor, #e18a24);
+}
+
+#ps_editor .ps-switch input:checked + .ps-switch-track::after {
+    transform: translateX(16px);
+}
+
+#ps_editor .ps-switch input:disabled + .ps-switch-track {
+    opacity: 0.5;
+}
+
 #ps_editor .ps-buttons {
     display: flex;
     gap: 6px;
