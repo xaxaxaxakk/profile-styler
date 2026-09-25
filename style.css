@@ -19,7 +19,6 @@ body.ps-dragging * {
 
 #ps_editor {
     position: fixed;
-
     left: 50%;
     top: calc(100dvh - var(--bottomFormBlockSize, 60px) - 20px);
     transform: translate(-50%, -100%);
@@ -73,6 +72,42 @@ body.ps-dragging * {
 
 #ps_editor .ps-close:hover {
     opacity: 1;
+}
+
+#ps_editor .ps-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+}
+
+#ps_editor .ps-tab {
+    flex: 1;
+    padding: 5px 0;
+    text-align: center;
+    cursor: pointer;
+    opacity: 0.6;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    user-select: none;
+}
+
+#ps_editor .ps-tab:hover {
+    opacity: 0.85;
+}
+
+#ps_editor .ps-tab.active {
+    opacity: 1;
+    font-weight: 600;
+    border-bottom-color: var(--SmartThemeQuoteColor, currentColor);
+}
+
+#ps_editor .ps-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#ps_editor .ps-pane[hidden] {
+    display: none;
 }
 
 #ps_editor select {
