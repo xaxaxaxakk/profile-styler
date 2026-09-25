@@ -1,0 +1,124 @@
+#chat .mes .avatar,
+#chat .mes .avatar img {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+body.ps-editing #chat .mes .avatar,
+body.ps-editing #chat .mes .avatar img {
+    cursor: grab !important;
+    touch-action: none !important;
+}
+
+body.ps-dragging,
+body.ps-dragging * {
+    cursor: grabbing !important;
+    user-select: none !important;
+}
+
+#ps_editor {
+    position: fixed;
+
+    left: 50%;
+    top: calc(100dvh - var(--bottomFormBlockSize, 60px) - 20px);
+    transform: translate(-50%, -100%);
+    z-index: 10050;
+    width: min(340px, calc(100vw - 24px));
+    box-sizing: border-box;
+    padding: 10px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    color: var(--SmartThemeBodyColor);
+    background: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 10px;
+    box-shadow: 0 6px 24px rgb(0 0 0 / 0.25);
+    backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
+    font-size: calc(var(--mainFontSize, 15px) * 0.92);
+}
+
+#ps_editor[hidden] {
+    display: none;
+}
+
+#ps_editor .ps-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: move;
+    touch-action: none;
+    user-select: none;
+}
+
+#ps_editor .ps-head b {
+    flex: 1;
+}
+
+#ps_editor .ps-scope {
+    font-size: 0.8em;
+    opacity: 0.7;
+    max-width: 45%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#ps_editor .ps-close {
+    cursor: pointer;
+    padding: 2px 4px;
+    opacity: 0.8;
+}
+
+#ps_editor .ps-close:hover {
+    opacity: 1;
+}
+
+#ps_editor select {
+    width: 100%;
+    margin: 0;
+}
+
+#ps_editor .ps-row {
+    display: grid;
+    grid-template-columns: 4.2em 1fr 4.2em;
+    align-items: center;
+    gap: 8px;
+}
+
+#ps_editor .ps-row input[type="range"] {
+    width: 100%;
+    margin: 0;
+}
+
+#ps_editor .ps-row input[type="number"] {
+    width: 100%;
+    margin: 0;
+    padding: 2px 4px;
+    text-align: right;
+}
+
+#ps_editor .ps-buttons {
+    display: flex;
+    gap: 6px;
+}
+
+#ps_editor .ps-buttons .menu_button {
+    flex: 1;
+    margin: 0;
+    white-space: nowrap;
+}
+
+.profile-styler-settings .ps-settings-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.profile-styler-settings small {
+    display: block;
+    opacity: 0.7;
+    margin-top: 4px;
+}

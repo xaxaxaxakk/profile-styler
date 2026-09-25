@@ -1,0 +1,12 @@
+{
+    "display_name": "프로필 스타일러",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "xaxaxaxakk",
+    "version": "1.0.0",
+    "homePage": "",
+    "auto_update": false
+}
