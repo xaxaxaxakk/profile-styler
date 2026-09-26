@@ -41,12 +41,115 @@ const splitKey = (key) => {
     return { kind: key.slice(0, i), file: key.slice(i + 1) };
 };
 
-function originalUrl(key) {
+function baseUrl(key) {
     const { kind, file } = splitKey(key);
     return `/${kind === 'persona' ? 'User%20Avatars' : 'characters'}/${encodeURIComponent(file)}`;
 }
 
+const sourceVersions = new Map();
+const sourceChecks = new Map();
+
+function originalUrl(key) {
+    const v = sourceVersions.get(key);
+    return v ? `${baseUrl(key)}?v=${v}` : baseUrl(key);
+}
+
+function checkSource(key) {
+    if (!key) return Promise.resolve();
+    const running = sourceChecks.get(key);
+    if (running) {
+        running.again = true;
+        return running.job;
+    }
+    const state = { again: false, job: null };
+    state.job = fetch(baseUrl(key), { method: 'HEAD', cache: 'no-cache' })
+        .then(res => {
+            const tag = res.ok && (res.headers.get('etag') || res.headers.get('last-modified'));
+            if (!tag) return;
+            const v = encodeURIComponent(tag.replace(/^W\//, '').replace(/"/g, ''));
+            if (sourceVersions.get(key) === v) return;
+            sourceVersions.set(key, v);
+            queueRender();
+        })
+        .catch(() => {})
+        .finally(() => {
+            sourceChecks.delete(key);
+            if (state.again) checkSource(key);
+        });
+    sourceChecks.set(key, state);
+    return state.job;
+}
+
+const lastLoadCheck = new Map();
+
+function onAvatarLoad(e) {
+    const img = e.target;
+    if (!(img instanceof HTMLImageElement) || !img.closest('#chat .mes .avatar, #user_avatar_block .avatar')) return;
+    const personaId = img.closest('#user_avatar_block [data-avatar-id]')?.getAttribute('data-avatar-id');
+    const key = personaId ? `persona:${personaId}` : keyFromImg(img);
+    if (!key || !getProfile(key)) return;
+    const now = performance.now();
+    if (now - (lastLoadCheck.get(key) || 0) < 1500) return;
+    lastLoadCheck.set(key, now);
+    checkSource(key);
+}
+
 const cssString = (v) => v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+const GALLERY = 'mood-avatar-switcher';
+const GALLERY_SEP = '|g:';
+const galleryBlobs = new Map();
+
+function galleryActive(key) {
+    const g = ctx().extensionSettings[GALLERY];
+    if (!g) return null;
+    const { kind, file } = splitKey(key);
+    const entry = g[kind === 'persona' ? 'user' : 'char']?.[file];
+    if (!entry?.activeId) return null;
+    const image = entry.images?.find(i => i.id === entry.activeId);
+    return image?.dataUrl ? image : null;
+}
+
+function galleryUrl(image) {
+    let url = galleryBlobs.get(image.id);
+    if (url) return url;
+    try {
+        const [head, b64] = image.dataUrl.split(',');
+        const mime = head.match(/^data:([^;,]+)/)?.[1] || 'image/webp';
+        const bin = atob(b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+    } catch {
+        url = image.dataUrl;
+    }
+    galleryBlobs.set(image.id, url);
+    return url;
+}
+
+function gallerySignature() {
+    const g = ctx().extensionSettings[GALLERY];
+    if (!g) return '';
+    return ['char', 'user'].map(kind => Object.entries(g[kind] || {})
+        .filter(([, e]) => e?.activeId)
+        .map(([file, e]) => `${file}=${e.activeId}`)
+        .join(',')).join(';');
+}
+
+function sourceUrl(key) {
+    const image = galleryActive(key);
+    return image ? galleryUrl(image) : originalUrl(key);
+}
+
+function profileKey(key) {
+    const image = galleryActive(key);
+    return image ? `${key}${GALLERY_SEP}${image.id}` : key;
+}
+
+const baseKey = (k) => {
+    const i = k.indexOf(GALLERY_SEP);
+    return i < 0 ? k : k.slice(0, i);
+};
 
 function imgSelector(key) {
     const { kind, file } = splitKey(key);
@@ -54,19 +157,21 @@ function imgSelector(key) {
     const files = [...new Set([encodeURIComponent(file), encodeURI(file), file])];
     const dirs = kind === 'persona' ? ['User%20Avatars/', 'User Avatars/'] : ['characters/'];
     const parts = [];
-    for (const f of files) {
-        const q = cssString(`type=${type}&file=${f}`);
-        parts.push(`[src$="${q}"]`, `[src*="${q}&"]`);
-        for (const d of dirs) {
-            const path = cssString(d + f);
-            parts.push(`[src$="${path}"]`, `[src*="${path}?"]`);
+    for (const attr of ['src', 'data-mood-original-src']) {
+        for (const f of files) {
+            const q = cssString(`type=${type}&file=${f}`);
+            parts.push(`[${attr}$="${q}"]`, `[${attr}*="${q}&"]`);
+            for (const d of dirs) {
+                const path = cssString(d + f);
+                parts.push(`[${attr}$="${path}"]`, `[${attr}*="${path}?"]`);
+            }
         }
     }
     return `#chat .mes .avatar img:is(${parts.join(', ')})`;
 }
 
 function keyFromImg(img) {
-    const raw = img?.getAttribute('src');
+    const raw = img?.getAttribute('data-mood-original-src') || img?.getAttribute('src');
     if (!raw) return null;
     let url;
     try {
@@ -97,7 +202,7 @@ function keyFromImg(img) {
 
 const naturalCache = new Map();
 function naturalAspect(key, img) {
-    const url = originalUrl(key);
+    const url = sourceUrl(key);
     const hit = naturalCache.get(url);
     if (typeof hit === 'number') return hit;
     if (hit === undefined) {
@@ -132,7 +237,7 @@ const processed = new Map();
 const nativeCanvasFilter = typeof CanvasRenderingContext2D !== 'undefined' && 'filter' in CanvasRenderingContext2D.prototype;
 
 function loadSource(key) {
-    const url = originalUrl(key);
+    const url = sourceUrl(key);
     if (!sourceImages.has(url)) {
         sourceImages.set(url, new Promise((resolve, reject) => {
             const img = new Image();
@@ -210,12 +315,14 @@ function drawProcessed(img, p, fill) {
     ));
 }
 
+const signatureFor = (key, p) => `${signature(p)}|${sourceUrl(key)}`;
+
 const signature = (p) => [p.rot || 0, p.flip ? 1 : 0, p.bright, p.contrast, p.sat, p.gray, settings().fillCorners ? 1 : 0].join('|');
 
 function requestProcessed(key, p) {
     let entry = processed.get(key);
     if (!entry) processed.set(key, entry = {});
-    const sig = signature(p);
+    const sig = signatureFor(key, p);
     entry.want = { sig, p: { ...p }, fill: settings().fillCorners };
     if (entry.busy || entry.failed === sig) return;
     entry.busy = true;
@@ -241,11 +348,12 @@ function requestProcessed(key, p) {
 
 function background(key, p) {
     if (!needsCanvas(p)) {
-        const ar = naturalCache.get(originalUrl(key));
-        return { url: originalUrl(key), aspect: typeof ar === 'number' ? ar : null, baked: false };
+        const url = sourceUrl(key);
+        const ar = naturalCache.get(url);
+        return { url, aspect: typeof ar === 'number' ? ar : null, baked: false };
     }
     const entry = processed.get(key);
-    if (entry?.sig !== signature(p)) requestProcessed(key, p);
+    if (entry?.sig !== signatureFor(key, p)) requestProcessed(key, p);
     return entry?.url ? { url: entry.url, aspect: entry.aspect, baked: true } : null;
 }
 
@@ -257,7 +365,8 @@ function themeProfiles(create = false) {
 }
 
 const getProfile = (key) => {
-    const p = themeProfiles()[key];
+    const all = themeProfiles();
+    const p = all[profileKey(key)] || all[key];
     return p ? { ...DEFAULT_VALUES, ...p } : null;
 };
 
@@ -275,14 +384,15 @@ function setProfile(key, p) {
         fit: p.fit === 'h' ? 'h' : 'w',
     };
     if (typeof p.ba === 'number' && p.ba > 0) profile.ba = p.ba;
-    themeProfiles(true)[key] = profile;
+    themeProfiles(true)[profileKey(key)] = profile;
     save();
     queueRender();
 }
 
 function resetProfile(key) {
     const profiles = themeProfiles();
-    delete profiles[key];
+    const pk = profileKey(key);
+    delete profiles[profiles[pk] ? pk : key];
     if (!Object.keys(profiles).length) delete settings().themes[themeName()];
     save();
     queueRender();
@@ -290,6 +400,7 @@ function resetProfile(key) {
 
 let styleEl = null;
 let renderedTheme = null;
+let renderedGallery = null;
 
 const shown = new Map();
 
@@ -351,9 +462,14 @@ function render() {
         document.head.append(styleEl);
     }
     renderedTheme = themeName();
+    renderedGallery = gallerySignature();
     const s = settings();
+    const keys = new Set(Object.keys(themeProfiles()).map(baseKey));
     const rules = s.enabled
-        ? Object.keys(themeProfiles()).map(key => ruleFor(key, getProfile(key))).filter(Boolean)
+        ? [...keys].map(key => {
+            const p = getProfile(key);
+            return p ? ruleFor(key, p) : '';
+        }).filter(Boolean)
         : [];
     if (editor.open && editor.key) {
         rules.push(`#chat .mes .avatar:has(> ${imgSelector(editor.key).replace('#chat .mes .avatar ', '')}) {
@@ -486,6 +602,7 @@ function buildEditor() {
     });
     el.querySelector('.ps-target').addEventListener('change', (e) => {
         editor.key = e.target.value || null;
+        checkSource(editor.key);
         syncEditor();
         queueRender();
     });
@@ -581,7 +698,7 @@ function refreshTargetList() {
         return;
     }
     for (const t of targets) {
-        const label = `${t.name}${themeProfiles()[t.key] ? ' ✎' : ''}`;
+        const label = `${t.name}${galleryActive(t.key) ? ' (갤러리)' : ''}${getProfile(t.key) ? ' ✎' : ''}`;
         select.append(new Option(label, t.key, false, t.key === editor.key));
     }
 }
@@ -644,6 +761,7 @@ function openEditor(key, anchor) {
     setDirectEditing(true);
     syncEditor();
     placeEditor(anchor instanceof Element ? anchor : visibleAvatar(editor.key));
+    checkSource(editor.key);
     queueRender();
 }
 
@@ -665,6 +783,7 @@ function hitAvatar(e) {
 function select(key) {
     if (editor.key === key) return;
     editor.key = key;
+    checkSource(key);
     syncEditor();
     queueRender();
 }
@@ -873,13 +992,31 @@ jQuery(() => {
     render();
 
     document.getElementById('chat')?.addEventListener('pointerdown', onChatPressStart, { passive: true });
+    document.getElementById('chat')?.addEventListener('load', onAvatarLoad, true);
+    document.getElementById('user_avatar_block')?.addEventListener('load', onAvatarLoad, true);
 
     const { eventSource, event_types } = ctx();
     eventSource.on(event_types.SETTINGS_UPDATED, () => {
-        if (themeName() === renderedTheme) return;
+        if (themeName() === renderedTheme && gallerySignature() === renderedGallery) return;
         render();
         syncEditor();
     });
+    $(document).on('click', '.mood-avatar-tile, .mood-avatar-tile-delete, #mood_avatar_reset_btn', () => {
+        setTimeout(() => {
+            if (gallerySignature() === renderedGallery) return;
+            render();
+            syncEditor();
+        }, 0);
+    });
+    eventSource.on(event_types.CHARACTER_EDITED, (data) => {
+        const avatar = data?.detail?.character?.avatar;
+        if (avatar && getProfile(`char:${avatar}`)) checkSource(`char:${avatar}`);
+    });
+    const onPersona = (avatarId) => {
+        if (typeof avatarId === 'string' && getProfile(`persona:${avatarId}`)) checkSource(`persona:${avatarId}`);
+    };
+    eventSource.on(event_types.PERSONA_UPDATED, onPersona);
+    eventSource.on(event_types.PERSONA_CHANGED, onPersona);
     eventSource.on(event_types.CHAT_CHANGED, () => {
         if (!editor.open) return;
         editor.key = null;
